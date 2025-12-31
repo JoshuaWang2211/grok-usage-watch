@@ -3,7 +3,7 @@
     "message": "Grok Usage Watch – 실시간 사용량 추적"
   },
   "extensionDescription": {
-    "message": "Grok 사용량을 실시간으로 추적합니다. Grok 3와 Grok 4를 지원합니다."
+    "message": "Grok 사용량을 실시간으로 추적합니다."
   },
   "actionTitle": {
     "message": "Grok.com 열기"

@@ -3,7 +3,7 @@
     "message": "Grok Usage Watch – 实时用量追踪"
   },
   "extensionDescription": {
-    "message": "实时监控 Grok 使用量。支持 Grok 3 和 Grok 4。"
+    "message": "实时监控 Grok 使用量。"
   },
   "actionTitle": {
     "message": "前往 Grok.com"

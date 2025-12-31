@@ -8,7 +8,7 @@ function toggleCollapse() {
 function createCollapseButton() {
   const button = document.createElement('div');
   const colors = getTextColors();
-  
+
   button.className = 'no-drag';
   button.style.cssText = `
     position: absolute;
@@ -27,18 +27,18 @@ function createCollapseButton() {
     background: rgba(255,255,255,0.1);
     border-radius: 3px;
   `;
-  
+
   button.innerHTML = isCollapsed ? '+' : '−';
   button.title = isCollapsed ? 'Expand' : 'Collapse';
-  
+
   button.onmouseenter = () => button.style.opacity = '1';
   button.onmouseleave = () => button.style.opacity = '0.7';
-  
+
   button.onclick = (e) => {
     e.stopPropagation();
     toggleCollapse();
   };
-  
+
   return button;
 }
 
@@ -49,11 +49,13 @@ let settings = {
   hideGrok4Heavy: false,
   colorMode: 'light',
   isCollapsed: false,
-  uiScale: 1.0
+  uiScale: 1.0,
+  miniMode: false,
+  showProgressBars: true
 };
 
-let lastData = { 
-  DEFAULT: { remaining: null, total: null, remainingTokens: null, totalTokens: null }, 
+let lastData = {
+  DEFAULT: { remaining: null, total: null, remainingTokens: null, totalTokens: null },
   GROK4HEAVY: { remaining: null, total: null }
 };
 
@@ -103,7 +105,7 @@ function getOriginalStyles() {
     color: "#333",
     border: "1px solid #999"
   };
-  
+
   if (settings.colorMode === 'dark') {
     return {
       ...base,
@@ -112,7 +114,7 @@ function getOriginalStyles() {
       border: "1px solid #444"
     };
   }
-  
+
   return base;
 }
 
@@ -154,16 +156,16 @@ function makeDraggable(element) {
     if (e.target.closest('.no-drag')) {
       return;
     }
-    
+
     e.preventDefault();
     isDragging = true;
-    
+
     if (element.style.right && element.style.right !== 'auto') {
       const rect = element.getBoundingClientRect();
       element.style.left = rect.left + "px";
       element.style.right = "auto";
     }
-    
+
     pos3 = e.clientX;
     pos4 = e.clientY;
     document.onmouseup = closeDragElement;
@@ -173,31 +175,31 @@ function makeDraggable(element) {
   function elementDrag(e) {
     if (!isDragging) return;
     e.preventDefault();
-    
+
     pos1 = pos3 - e.clientX;
     pos2 = pos4 - e.clientY;
     pos3 = e.clientX;
     pos4 = e.clientY;
-    
+
     let newTop = element.offsetTop - pos2;
     let newLeft = element.offsetLeft - pos1;
-    
+
     const currentScale = settings.uiScale || 1.0;
     const elementWidth = element.offsetWidth;
     const elementHeight = element.offsetHeight;
     const windowWidth = window.innerWidth;
     const windowHeight = window.innerHeight;
-    
+
     const scaledWidth = elementWidth * currentScale;
     const scaledHeight = elementHeight * currentScale;
     const overflowX = (scaledWidth - elementWidth) / 2;
     const overflowY = (scaledHeight - elementHeight) / 2;
-    
+
     const scaledLeft = newLeft - overflowX;
     const scaledRight = newLeft + elementWidth + overflowX;
     const scaledTop = newTop - overflowY;
     const scaledBottom = newTop + elementHeight + overflowY;
-    
+
     if (scaledLeft < 0) {
       newLeft = overflowX;
     }
@@ -210,10 +212,10 @@ function makeDraggable(element) {
     if (scaledBottom > windowHeight) {
       newTop = windowHeight - elementHeight - overflowY;
     }
-    
+
     newLeft = Math.round(newLeft);
     newTop = Math.round(newTop);
-    
+
     element.style.top = newTop + "px";
     element.style.left = newLeft + "px";
   }
@@ -224,7 +226,7 @@ function makeDraggable(element) {
       const currentLeft = parseInt(element.style.left) || 0;
       savePosition(currentTop, currentLeft);
     }
-    
+
     isDragging = false;
     document.onmouseup = null;
     document.onmousemove = null;
@@ -233,10 +235,10 @@ function makeDraggable(element) {
 
 function formatWaitTime(seconds) {
   if (!seconds || seconds <= 0) return "";
-  
+
   const minutes = Math.floor(seconds / 60);
   const remainingSeconds = seconds % 60;
-  
+
   if (minutes > 0) {
     return `${minutes}m ${remainingSeconds}s`;
   } else {
@@ -244,24 +246,47 @@ function formatWaitTime(seconds) {
   }
 }
 
+const WARNING_THRESHOLD = 30;
+const CRITICAL_THRESHOLD = 10;
+
+function getQuotaColor(percentage) {
+  if (percentage <= CRITICAL_THRESHOLD) {
+    return { color: '#e74c3c' };
+  } else if (percentage <= WARNING_THRESHOLD) {
+    return { color: '#f39c12' };
+  } else {
+    return { color: '#27ae60' };
+  }
+}
+
+function createProgressBar(percentage, colorInfo, width = '100%') {
+  const bgColor = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+  return `
+    <div style="width: ${width}; height: 6px; background: ${bgColor}; border-radius: 3px; overflow: hidden; margin-top: 4px;">
+      <div style="width: ${Math.max(0, Math.min(100, percentage))}%; height: 100%; background: ${colorInfo.color}; border-radius: 3px; transition: width 0.3s ease;"></div>
+    </div>
+  `;
+}
+
+
+
 function getWaitTimeDisplay(data) {
   const lowEffortWaitTime = data.DEFAULT?.lowEffortRateLimits?.waitTimeSeconds;
   const highEffortWaitTime = data.DEFAULT?.highEffortRateLimits?.waitTimeSeconds;
-  
+  const colors = getTextColors();
+
   const hasLowEffortWait = lowEffortWaitTime && lowEffortWaitTime > 0;
   const hasHighEffortWait = highEffortWaitTime && highEffortWaitTime > 0;
-  
+
   if (!hasLowEffortWait && !hasHighEffortWait) {
     return "";
   }
-  
-  const colors = getTextColors();
-  
+
   let waitTimeHtml = `
     <div style="font-size: 14px; color: ${colors.refill}; font-weight: bold; margin-top: 12px; margin-bottom: 4px;">Refill in</div>
     <div style="display: table; font-size: 16px; width: 100%;">
   `;
-  
+
   if (hasLowEffortWait) {
     waitTimeHtml += `
       <div style="display: table-row;">
@@ -270,7 +295,7 @@ function getWaitTimeDisplay(data) {
       </div>
     `;
   }
-  
+
   if (hasHighEffortWait) {
     waitTimeHtml += `
       <div style="display: table-row;">
@@ -279,16 +304,15 @@ function getWaitTimeDisplay(data) {
       </div>
     `;
   }
-  
+
   waitTimeHtml += `</div>`;
-  
   return waitTimeHtml;
 }
 
 function createSettingsButton() {
   const button = document.createElement('div');
   const colors = getTextColors();
-  
+
   button.className = 'no-drag';
   button.style.cssText = `
     position: absolute;
@@ -307,10 +331,10 @@ function createSettingsButton() {
     transition: all 0.2s ease;
     background: rgba(255,255,255,0.1);
   `;
-  
+
   button.innerHTML = '⚙';
   button.title = 'Settings';
-  
+
   button.onmouseenter = () => {
     button.style.opacity = '1';
     button.style.transform = 'rotate(45deg)';
@@ -319,18 +343,18 @@ function createSettingsButton() {
     button.style.opacity = '0.7';
     button.style.transform = 'rotate(0deg)';
   };
-  
+
   button.onclick = (e) => {
     e.stopPropagation();
     showSettings();
   };
-  
+
   return button;
 }
 
 function createToggle(checked, onChange) {
   const toggle = document.createElement('div');
-  
+
   toggle.className = 'no-drag';
   toggle.style.cssText = `
     width: 36px;
@@ -341,7 +365,7 @@ function createToggle(checked, onChange) {
     cursor: pointer;
     transition: background 0.2s ease;
   `;
-  
+
   const handle = document.createElement('div');
   handle.style.cssText = `
     width: 14px;
@@ -354,33 +378,33 @@ function createToggle(checked, onChange) {
     transition: left 0.2s ease;
     box-shadow: 0 1px 3px rgba(0,0,0,0.3);
   `;
-  
+
   toggle.appendChild(handle);
-  
+
   let isUpdating = false;
   toggle.onclick = () => {
     if (isUpdating) return;
-    
+
     isUpdating = true;
     const newChecked = !checked;
-    
+
     toggle.style.background = newChecked ? '#27ae60' : (settings.colorMode === 'dark' ? '#555' : '#ccc');
     handle.style.left = newChecked ? '20px' : '2px';
-    
+
     checked = newChecked;
     onChange(newChecked);
-    
+
     setTimeout(() => {
       isUpdating = false;
     }, 100);
   };
-  
+
   return toggle;
 }
 
 function createColorModeToggle() {
   const container = document.createElement('div');
-  
+
   container.className = 'no-drag';
   container.style.cssText = `
     width: 60px;
@@ -393,7 +417,7 @@ function createColorModeToggle() {
     transition: all 0.2s ease;
     border: 1px solid ${settings.colorMode === 'dark' ? '#555' : '#ccc'};
   `;
-  
+
   const lightHalf = document.createElement('div');
   lightHalf.style.cssText = `
     width: 50%;
@@ -408,7 +432,7 @@ function createColorModeToggle() {
     transition: all 0.2s ease;
   `;
   lightHalf.textContent = 'Light';
-  
+
   const darkHalf = document.createElement('div');
   darkHalf.style.cssText = `
     width: 50%;
@@ -423,10 +447,10 @@ function createColorModeToggle() {
     transition: all 0.2s ease;
   `;
   darkHalf.textContent = 'Dark';
-  
+
   container.appendChild(lightHalf);
   container.appendChild(darkHalf);
-  
+
   container.onmouseenter = () => {
     if (settings.colorMode === 'light') {
       darkHalf.style.background = '#5a5a5a';
@@ -438,20 +462,20 @@ function createColorModeToggle() {
     lightHalf.style.background = settings.colorMode === 'light' ? '#f0f0f0' : '#444';
     darkHalf.style.background = settings.colorMode === 'dark' ? '#2c3e50' : '#666';
   };
-  
+
   container.onclick = () => {
     settings.colorMode = settings.colorMode === 'light' ? 'dark' : 'light';
     saveSettings();
     updateDisplay(lastData);
   };
-  
+
   return container;
 }
 
 function createUIScaleSlider() {
   const container = document.createElement('div');
   const colors = getTextColors();
-  
+
   container.className = 'no-drag';
   container.style.cssText = `
     width: 150px;
@@ -460,7 +484,7 @@ function createUIScaleSlider() {
     border-radius: 6px;
     padding: 4px 12px;
   `;
-  
+
   const track = document.createElement('div');
   track.style.cssText = `
     position: absolute;
@@ -472,15 +496,15 @@ function createUIScaleSlider() {
     border-radius: 1px;
     z-index: 1;
   `;
-  
+
   const scaleValues = [0.8, 0.9, 1.0, 1.1, 1.2];
-  
+
   scaleValues.forEach((scale, index) => {
     const trackStart = 12;
     const trackEnd = 150 - 12;
     const trackLength = trackEnd - trackStart;
     const tickPosition = trackStart + (index * trackLength) / (scaleValues.length - 1);
-    
+
     const tickContainer = document.createElement('div');
     tickContainer.style.cssText = `
       position: absolute;
@@ -496,9 +520,9 @@ function createUIScaleSlider() {
       flex-direction: column;
       z-index: 2;
     `;
-    
+
     const isActive = Math.abs(settings.uiScale - scale) < 0.01;
-    
+
     const tick = document.createElement('div');
     tick.style.cssText = `
       width: 4px;
@@ -509,10 +533,10 @@ function createUIScaleSlider() {
       border-radius: 2px;
       margin-bottom: 2px;
     `;
-    
+
     const label = document.createElement('div');
     label.style.cssText = `
-      font-size: 8px;
+      font-size: 7px;
       color: ${isActive ? '#27ae60' : colors.label};
       white-space: nowrap;
       pointer-events: none;
@@ -520,15 +544,15 @@ function createUIScaleSlider() {
       text-shadow: ${settings.colorMode === 'dark' ? '0 1px 1px rgba(0,0,0,0.5)' : 'none'};
     `;
     label.textContent = `${Math.round(scale * 100)}%`;
-    
+
     tickContainer.appendChild(tick);
     tickContainer.appendChild(label);
-    
+
     tickContainer.onclick = (e) => {
       e.stopPropagation();
       applyUIScale(scale);
     };
-    
+
     tickContainer.onmouseenter = () => {
       if (!isActive) {
         tick.style.background = settings.colorMode === 'dark' ? '#bdc3c7' : '#5d6d7e';
@@ -538,7 +562,7 @@ function createUIScaleSlider() {
         label.style.fontWeight = 'bold';
       }
     };
-    
+
     tickContainer.onmouseleave = () => {
       if (!isActive) {
         tick.style.background = settings.colorMode === 'dark' ? '#777' : '#999';
@@ -548,10 +572,10 @@ function createUIScaleSlider() {
         label.style.fontWeight = 'normal';
       }
     };
-    
+
     container.appendChild(tickContainer);
   });
-  
+
   container.appendChild(track);
   return container;
 }
@@ -572,6 +596,8 @@ function applyCurrentUIScale() {
   }
 }
 
+
+
 function showSettings() {
   currentView = 'settings';
   updateDisplay(lastData);
@@ -591,7 +617,7 @@ function createDisplay() {
   if (!displayDiv) {
     displayDiv = document.createElement("div");
     displayDiv.id = "grok-rate-checker";
-    
+
     const styles = getOriginalStyles();
     displayDiv.style.position = "fixed";
     displayDiv.style.background = styles.background;
@@ -603,25 +629,25 @@ function createDisplay() {
     displayDiv.style.borderRadius = "8px";
     displayDiv.style.fontFamily = "Arial, sans-serif";
     displayDiv.style.cursor = "move";
-    displayDiv.style.transition = "transform 0.2s ease";
-    displayDiv.style.minWidth = "200px";
-    
+    displayDiv.style.transition = "transform 0.2s ease, opacity 0.3s ease";
+    displayDiv.style.minWidth = settings.miniMode ? "80px" : "200px";
+
     const savedPosition = loadPosition();
     if (savedPosition) {
       displayDiv.style.top = savedPosition.top + "px";
       displayDiv.style.left = savedPosition.left + "px";
       displayDiv.style.right = "auto";
     } else {
-      const elementWidth = 200;
+      const elementWidth = settings.miniMode ? 80 : 200;
       const defaultTop = 150;
-      const defaultRight = 20;
+      const defaultRight = 35;
       const defaultLeft = Math.max(0, window.innerWidth - elementWidth - defaultRight);
-      
+
       displayDiv.style.top = defaultTop + "px";
       displayDiv.style.left = defaultLeft + "px";
       displayDiv.style.right = "auto";
     }
-    
+
     displayDiv.onmouseover = () => {
       const currentScale = settings.uiScale || 1.0;
       const hoverScale = currentScale * 1.05;
@@ -631,7 +657,7 @@ function createDisplay() {
     displayDiv.onmouseout = () => {
       applyCurrentUIScale();
     };
-    
+
     if (document.body) {
       document.body.appendChild(displayDiv);
       makeDraggable(displayDiv);
@@ -642,29 +668,164 @@ function createDisplay() {
 
 function updateDisplay(data) {
   createDisplay();
-  
+
   const styles = getOriginalStyles();
   displayDiv.style.background = styles.background;
   displayDiv.style.border = styles.border;
   displayDiv.style.color = styles.color;
-  
+  displayDiv.style.minWidth = settings.miniMode ? "80px" : "200px";
+
   if (currentView === 'settings') {
     showSettingsView();
   } else if (currentView === 'about') {
     showAboutView();
   } else {
-    showMainView(data);
+    if (settings.miniMode) {
+      showMiniView(data);
+    } else {
+      showMainView(data);
+    }
   }
-  
+
   applyCurrentUIScale();
   lastData = { ...data };
   addAnimationStyles();
+}
+
+function showMiniView(data) {
+  const colors = getTextColors();
+  const lowRemaining = data.DEFAULT?.lowEffortRateLimits?.remainingQueries || 0;
+  const highRemaining = data.DEFAULT?.highEffortRateLimits?.remainingQueries || 0;
+  const totalTokens = data.DEFAULT?.totalTokens || 140;
+  const highEffortCost = data.DEFAULT?.highEffortRateLimits?.cost || 4;
+  const highTotal = Math.floor(totalTokens / highEffortCost);
+
+  const lowPercent = Math.round((lowRemaining / totalTokens) * 100);
+  const highPercent = Math.round((highRemaining / highTotal) * 100);
+
+  const lowColor = getQuotaColor(lowPercent);
+  const highColor = getQuotaColor(highPercent);
+
+  const lowEffortWaitTime = data.DEFAULT?.lowEffortRateLimits?.waitTimeSeconds;
+  const highEffortWaitTime = data.DEFAULT?.highEffortRateLimits?.waitTimeSeconds;
+  const hasLowWait = lowEffortWaitTime && lowEffortWaitTime > 0;
+  const hasHighWait = highEffortWaitTime && highEffortWaitTime > 0;
+
+  let statusIndicator = '';
+  if (hasLowWait || hasHighWait) {
+    let timerLines = '';
+    if (hasLowWait) {
+      timerLines += `<div>⏳ Lo: ${formatWaitTime(lowEffortWaitTime)}</div>`;
+    }
+    if (hasHighWait) {
+      timerLines += `<div>⏳ Hi: ${formatWaitTime(highEffortWaitTime)}</div>`;
+    }
+    statusIndicator = `<div style="font-size: 9px; color: #e74c3c; margin-top: 4px;">${timerLines}</div>`;
+  }
+
+  let contentHtml;
+  if (settings.showProgressBars) {
+    contentHtml = `
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 9px; color: ${colors.label};">Lo</span>
+            <span style="font-size: 11px; font-weight: bold; color: ${lowColor.color};">${lowPercent}%</span>
+          </div>
+          ${createProgressBar(lowPercent, lowColor)}
+        </div>
+        <div>
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 9px; color: ${colors.label};">Hi</span>
+            <span style="font-size: 11px; font-weight: bold; color: ${highColor.color};">${highPercent}%</span>
+          </div>
+          ${createProgressBar(highPercent, highColor)}
+        </div>
+      </div>
+    `;
+  } else {
+    contentHtml = `
+      <div style="display: flex; flex-direction: column; gap: 2px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 9px; color: ${colors.label};">Lo:</span>
+          <span style="font-size: 12px; font-weight: bold; color: ${colors.lowEffort};">${lowRemaining}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 9px; color: ${colors.label};">Hi:</span>
+          <span style="font-size: 12px; font-weight: bold; color: ${colors.highEffort};">${highRemaining}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  displayDiv.innerHTML = `
+    <div style="padding: 4px 6px; text-align: center; position: relative;">
+      <div style="font-size: 10px; color: ${colors.label}; margin-bottom: 6px;">Usage</div>
+      ${contentHtml}
+      ${statusIndicator}
+    </div>
+  `;
+
+  displayDiv.appendChild(createMiniSettingsButton());
+}
+
+function createMiniSettingsButton() {
+  const button = document.createElement('div');
+  const colors = getTextColors();
+
+  button.className = 'no-drag';
+  button.style.cssText = `
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    color: ${colors.label};
+    opacity: 0.5;
+    transition: all 0.2s ease;
+    background: rgba(255,255,255,0.1);
+  `;
+
+  button.innerHTML = '⚙';
+  button.title = 'Settings';
+
+  button.onmouseenter = () => {
+    button.style.opacity = '1';
+  };
+  button.onmouseleave = () => {
+    button.style.opacity = '0.5';
+  };
+
+  button.onclick = (e) => {
+    e.stopPropagation();
+    showSettings();
+  };
+
+  return button;
 }
 
 function showMainView(data) {
   const shouldFade = (kind, type) => lastData[kind][type] !== null && lastData[kind][type] !== data[kind][type];
   const waitTimeDisplay = getWaitTimeDisplay(data);
   const colors = getTextColors();
+
+  const lowRemaining = data.DEFAULT?.lowEffortRateLimits?.remainingQueries || 0;
+  const highRemaining = data.DEFAULT?.highEffortRateLimits?.remainingQueries || 0;
+  const totalTokens = data.DEFAULT?.totalTokens || 140;
+  const highEffortCost = data.DEFAULT?.highEffortRateLimits?.cost || 4;
+  const highTotal = Math.floor(totalTokens / highEffortCost);
+
+  const lowPercent = Math.round((lowRemaining / totalTokens) * 100);
+  const highPercent = Math.round((highRemaining / highTotal) * 100);
+
+  const lowColor = getQuotaColor(lowPercent);
+  const highColor = getQuotaColor(highPercent);
 
   if (isCollapsed) {
     displayDiv.innerHTML = `
@@ -679,50 +840,111 @@ function showMainView(data) {
 
   let grok4HeavySection = '';
   if (!settings.hideGrok4Heavy) {
-    grok4HeavySection = `
-      <div style="font-size: 14px; color: ${colors.section}; font-weight: bold; margin-top: 12px; margin-bottom: 4px;">Special Features</div>
+    const heavyRemaining = data.GROK4HEAVY?.remaining || 0;
+    const heavyTotal = data.GROK4HEAVY?.total || 3;
+    const heavyPercent = Math.round((heavyRemaining / heavyTotal) * 100);
+    const heavyColor = getQuotaColor(heavyPercent);
+
+    if (settings.showProgressBars) {
+      grok4HeavySection = `
+        <div style="font-size: 14px; color: ${colors.section}; font-weight: bold; margin-top: 12px; margin-bottom: 4px;">Special Feature</div>
+        <div style="margin-bottom: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <span style="font-size: 13px; color: ${colors.label};">Heavy</span>
+            <span style="font-size: 13px; font-weight: bold; color: ${heavyColor.color};">${heavyRemaining}/${heavyTotal} (${heavyPercent}%)</span>
+          </div>
+          ${createProgressBar(heavyPercent, heavyColor)}
+        </div>
+      `;
+    } else {
+      grok4HeavySection = `
+        <div style="font-size: 14px; color: ${colors.section}; font-weight: bold; margin-top: 12px; margin-bottom: 4px;">Special Feature</div>
+        <div style="display: table; font-size: 16px; width: 100%;">
+          <div style="display: table-row;">
+            <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">Heavy:</span>
+            <span style="display: table-cell; text-align: right; color: ${colors.grok4Heavy};">${heavyRemaining} / ${heavyTotal}</span>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  let tokensSection;
+  if (settings.showProgressBars) {
+    tokensSection = `
+      <div style="margin-bottom: 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 13px; color: ${colors.label};">Low Effort</span>
+          <span style="font-size: 13px; font-weight: bold; color: ${lowColor.color};">${lowRemaining}/${totalTokens} (${lowPercent}%)</span>
+        </div>
+        ${createProgressBar(lowPercent, lowColor)}
+      </div>
+      
+      <div style="margin-bottom: 4px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 13px; color: ${colors.label};">High Effort</span>
+          <span style="font-size: 13px; font-weight: bold; color: ${highColor.color};">${highRemaining}/${highTotal} (${highPercent}%)</span>
+        </div>
+        ${createProgressBar(highPercent, highColor)}
+      </div>
+    `;
+  } else {
+    tokensSection = `
       <div style="display: table; font-size: 16px; width: 100%;">
         <div style="display: table-row;">
-          <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">Grok 4 Heavy:</span>
-          <span style="display: table-cell; text-align: right; color: ${colors.grok4Heavy}; ${shouldFade('GROK4HEAVY', 'remaining') || shouldFade('GROK4HEAVY', 'total') ? 'animation: fadeIn 0.5s;' : ''}">${data.GROK4HEAVY?.remaining || 0} / ${data.GROK4HEAVY?.total || 0}</span>
+          <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">Low Effort:</span>
+          <span style="display: table-cell; text-align: right; color: ${colors.lowEffort};">${lowRemaining} / ${totalTokens}</span>
+        </div>
+        <div style="display: table-row;">
+          <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">High Effort:</span>
+          <span style="display: table-cell; text-align: right; color: ${colors.highEffort};">${highRemaining} / ${highTotal}</span>
         </div>
       </div>
     `;
   }
-  
+
   displayDiv.innerHTML = `
     <strong style="color: ${colors.title}; font-size: 16px; display: block; text-align: center;">Grok Usage Watch</strong>
     <div style="margin-top: 8px;">
-      <div style="font-size: 14px; color: ${colors.section}; font-weight: bold; margin-bottom: 4px;">Tokens</div>
-      <div style="display: table; font-size: 16px; width: 100%;">
-        <div style="display: table-row;">
-          <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">Low Effort:</span>
-          <span style="display: table-cell; text-align: right; color: ${colors.lowEffort};">${data.DEFAULT?.lowEffortRateLimits?.remainingQueries || 0} / ${data.DEFAULT?.totalTokens || 'N/A'}</span>
-        </div>
-        <div style="display: table-row;">
-          <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">High Effort:</span>
-          <span style="display: table-cell; text-align: right; color: ${colors.highEffort};">${data.DEFAULT?.highEffortRateLimits?.remainingQueries || 0} / ${data.DEFAULT?.highEffortRateLimits?.cost && data.DEFAULT?.totalTokens ? Math.floor(data.DEFAULT.totalTokens / data.DEFAULT.highEffortRateLimits.cost) : 'N/A'}</span>
-        </div>
-      </div>
+      <div style="font-size: 14px; color: ${colors.section}; font-weight: bold; margin-bottom: 8px;">Tokens</div>
+      ${tokensSection}
       ${grok4HeavySection}
     </div>
     ${waitTimeDisplay}
   `;
-  
+
   displayDiv.appendChild(createCollapseButton());
   displayDiv.appendChild(createSettingsButton());
 }
 
 function showSettingsView() {
   const colors = getTextColors();
-  
+
   displayDiv.innerHTML = `
     <strong style="color: ${colors.title}; font-size: 16px; display: block; text-align: center;">Settings</strong>
     <div style="margin-top: 8px;">
       <div style="padding: 6px; margin-bottom: 6px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="flex: 1;">
-            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Hide Grok 4 Heavy</div>
+            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Mini Mode</div>
+          </div>
+          <div id="mini-mode-toggle" style="margin-left: 8px;"></div>
+        </div>
+      </div>
+      
+      <div style="padding: 6px; margin-bottom: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="flex: 1;">
+            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Progress Bars</div>
+          </div>
+          <div id="progress-bars-toggle" style="margin-left: 8px;"></div>
+        </div>
+      </div>
+      
+      <div style="padding: 6px; margin-bottom: 6px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div style="flex: 1;">
+            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Hide Heavy</div>
           </div>
           <div id="hide-toggle" style="margin-left: 8px;"></div>
         </div>
@@ -763,7 +985,7 @@ function showSettingsView() {
       </div>
     </div>
   `;
-  
+
   const closeBtn = displayDiv.querySelector('#close-settings');
   closeBtn.onclick = showMain;
   closeBtn.onmouseenter = () => {
@@ -774,7 +996,7 @@ function showSettingsView() {
     closeBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
     closeBtn.style.borderColor = getTextColors().label;
   };
-  
+
   const aboutBtn = displayDiv.querySelector('#show-about');
   aboutBtn.onclick = showAbout;
   aboutBtn.onmouseenter = () => {
@@ -785,47 +1007,61 @@ function showSettingsView() {
     aboutBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
     aboutBtn.style.borderColor = getTextColors().label;
   };
-  
+
+  const miniModeContainer = displayDiv.querySelector('#mini-mode-toggle');
+  const miniModeToggle = createToggle(settings.miniMode, (checked) => {
+    settings.miniMode = checked;
+    saveSettings();
+  });
+  miniModeContainer.appendChild(miniModeToggle);
+
+  const progressBarsContainer = displayDiv.querySelector('#progress-bars-toggle');
+  const progressBarsToggle = createToggle(settings.showProgressBars, (checked) => {
+    settings.showProgressBars = checked;
+    saveSettings();
+  });
+  progressBarsContainer.appendChild(progressBarsToggle);
+
   const hideToggleContainer = displayDiv.querySelector('#hide-toggle');
   const hideToggle = createToggle(settings.hideGrok4Heavy, (checked) => {
     settings.hideGrok4Heavy = checked;
     saveSettings();
   });
   hideToggleContainer.appendChild(hideToggle);
-  
+
   const colorToggleContainer = displayDiv.querySelector('#color-toggle');
   const colorToggle = createColorModeToggle();
   colorToggleContainer.appendChild(colorToggle);
-  
+
   const uiScaleContainer = displayDiv.querySelector('#ui-scale-slider');
   const uiScaleSlider = createUIScaleSlider();
   uiScaleContainer.appendChild(uiScaleSlider);
-  
+
 
   const resetPositionBtn = displayDiv.querySelector('#reset-position-btn');
   resetPositionBtn.onclick = () => {
 
-    const elementWidth = 200;
-    const defaultTop = 150;
-    const defaultRight = 20;
+    const elementWidth = settings.miniMode ? 80 : 200;
+    const defaultTop = 130;
+    const defaultRight = 70;
     const defaultLeft = Math.max(0, window.innerWidth - elementWidth - defaultRight);
-    
+
     displayDiv.style.top = defaultTop + 'px';
     displayDiv.style.left = defaultLeft + 'px';
     displayDiv.style.right = 'auto';
-    
+
 
     savePosition(defaultTop, defaultLeft);
-    
+
 
     showMain();
   };
-  
+
   resetPositionBtn.onmouseenter = () => {
     resetPositionBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)';
     resetPositionBtn.style.borderColor = settings.colorMode === 'dark' ? '#888' : '#888';
   };
-  
+
   resetPositionBtn.onmouseleave = () => {
     resetPositionBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
     resetPositionBtn.style.borderColor = getTextColors().label;
@@ -834,20 +1070,22 @@ function showSettingsView() {
 
 function showAboutView() {
   const colors = getTextColors();
-  
+
   displayDiv.innerHTML = `
     <div style="position: relative; height: 280px;">
       <strong style="color: ${colors.title}; font-size: 16px; display: block; text-align: center; margin-bottom: 16px;">About</strong>
       
       <div style="height: 235px; overflow-y: auto; padding-right: 8px; margin-bottom: 8px; scrollbar-width: thin;">
         <div style="color: ${colors.title}; font-size: 14px; font-weight: bold; margin-bottom: 8px;">Grok Usage Watch</div>
-        <div style="color: ${colors.label}; font-size: 12px; margin-bottom: 4px;"><strong>Version:</strong> 1.3.0</div>
+        <div style="color: ${colors.label}; font-size: 12px; margin-bottom: 4px;"><strong>Version:</strong> 1.4.0</div>
         <div style="color: ${colors.label}; font-size: 12px; margin-bottom: 12px;"><strong>Author:</strong> Joshua Wang</div>
         
         <div style="color: ${colors.value}; font-size: 12px; line-height: 1.5; margin-bottom: 12px;">
           Made with love for the Grok community.<br>
           Free, simple, and shared with joy.
         </div>
+        
+
         
         <div style="color: ${colors.value}; font-size: 12px; line-height: 1.5;">
           If you enjoy it,<br>
@@ -861,7 +1099,7 @@ function showAboutView() {
       </div>
     </div>
   `;
-  
+
   const closeBtn = displayDiv.querySelector('#close-about');
   closeBtn.onclick = showMain;
   closeBtn.onmouseenter = () => {
@@ -909,16 +1147,16 @@ function fetchRateLimits(kind, model) {
       modelName: model
     })
   })
-  .then(response => {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error('UNAUTHORIZED');
-    }
-    if (response.ok) {
-      return response.json();
-    } else {
-      throw new Error(`Request failed for ${kind} (${model}) with status: ${response.status}`);
-    }
-  });
+    .then(response => {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('UNAUTHORIZED');
+      }
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error(`Request failed for ${kind} (${model}) with status: ${response.status}`);
+      }
+    });
 }
 
 function checkRateLimits() {
@@ -936,7 +1174,7 @@ function checkRateLimits() {
         highEffortRateLimits: data.highEffortRateLimits,
         windowSizeSeconds: data.windowSizeSeconds
       };
-      
+
       return fetchRateLimits("DEFAULT", "grok-4-heavy");
     })
     .then(data => {
@@ -961,15 +1199,15 @@ function checkRateLimits() {
         }
         return;
       }
-      
-      results.DEFAULT = results.DEFAULT || { 
-        remaining: "Error", 
+
+      results.DEFAULT = results.DEFAULT || {
+        remaining: "Error",
         total: "Error",
         remainingTokens: null,
         totalTokens: null
       };
-      results.GROK4HEAVY = { 
-        remaining: "Error", 
+      results.GROK4HEAVY = {
+        remaining: "Error",
         total: "Error"
       };
       updateDisplay(results);
@@ -980,6 +1218,6 @@ loadSettings();
 checkRateLimits();
 setInterval(checkRateLimits, 5000);
 
-document.addEventListener("submit", function() {
+document.addEventListener("submit", function () {
   setTimeout(checkRateLimits, 1000);
 });

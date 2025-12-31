@@ -3,7 +3,7 @@
     "message": "Grok Usage Watch – Rate Limit Tracker"
   },
   "extensionDescription": {
-    "message": "Track Grok usage in real time. Supports Grok 3 and Grok 4."
+    "message": "Track Grok usage in real time."
   },
   "actionTitle": {
     "message": "Open Grok.com"

@@ -1,6 +1,6 @@
 # 🌟 Grok Usage Watch – Rate Limit Tracker
 
-🔎 Real-time display of your remaining Grok usage (supports Grok 3 and Grok 4)  
+🔎 Real-time display of your remaining Grok usage
 
 📘 [View in Traditional Chinese / 繁體中文](./README.zh-TW.md)
 
@@ -10,7 +10,7 @@
 
 **Grok Usage Watch** is a lightweight browser extension that displays your remaining Grok usage directly on Grok.com.
 
-It supports Grok 3, Grok 4, and Grok 4 Heavy, with a clean, draggable floating window that keeps your usage always visible.
+It features a clean, draggable floating window that keeps your usage always visible.
 
 ---
 

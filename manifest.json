@@ -1,30 +1,36 @@
 {
-  "manifest_version": 3,
-  "name": "__MSG_extensionName__",
-  "version": "1.3.0",
-  "description": "__MSG_extensionDescription__",
-  "host_permissions": ["https://grok.com/*"],
-  "icons": {
-    "16": "icons/icon16.png",
-    "48": "icons/icon48.png",
-    "128": "icons/icon128.png"
-  },
-  "content_scripts": [
-    {
-      "matches": ["https://grok.com/*"],
-      "js": ["src/content.js"]
-    }
-  ],
-  "background": {
-    "service_worker": "src/background.js"
-  },
-  "action": {
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
+    "manifest_version": 3,
+    "name": "__MSG_extensionName__",
+    "version": "1.4.0",
+    "description": "__MSG_extensionDescription__",
+    "host_permissions": [
+        "https://grok.com/*"
+    ],
+    "icons": {
+        "16": "icons/icon16.png",
+        "48": "icons/icon48.png",
+        "128": "icons/icon128.png"
     },
-    "default_title": "__MSG_actionTitle__"
-  },
-  "default_locale": "en"
+    "content_scripts": [
+        {
+            "matches": [
+                "https://grok.com/*"
+            ],
+            "js": [
+                "src/content.js"
+            ]
+        }
+    ],
+    "background": {
+        "service_worker": "src/background.js"
+    },
+    "action": {
+        "default_icon": {
+            "16": "icons/icon16.png",
+            "48": "icons/icon48.png",
+            "128": "icons/icon128.png"
+        },
+        "default_title": "__MSG_actionTitle__"
+    },
+    "default_locale": "en"
 }

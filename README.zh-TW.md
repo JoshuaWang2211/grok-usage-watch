@@ -1,6 +1,6 @@
 # 🌟 Grok Usage Watch – Rate Limit Tracker
 
-🔎 即時顯示 Grok 使用量（支援 Grok 3 與 Grok 4）  
+🔎 即時顯示 Grok 使用量
 
 📘 [View in English](./README.md)
 
@@ -10,7 +10,7 @@
 
 **Grok Usage Watch** 是一款輕量級的瀏覽器擴充功能，能在 Grok.com 網站上即時顯示你的剩餘使用資源。 
 
-支援 Grok 3、Grok 4 和 Grok 4 Heavy，透過簡潔、可拖曳的懸浮視窗，讓你隨時掌握使用狀況。
+透過簡潔、可拖曳的懸浮視窗，讓你隨時掌握使用狀況。
 
 ---
 

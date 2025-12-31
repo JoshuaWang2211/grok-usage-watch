@@ -1,5 +1,4 @@
-const api = typeof browser !== "undefined" ? browser : chrome;
-
-api.action.onClicked.addListener(() => {
-  api.tabs.create({ url: "https://grok.com" });
+chrome.action.onClicked.addListener(() => {
+    chrome.tabs.create({ url: "https://grok.com" });
 });
+

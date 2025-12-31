@@ -2,6 +2,18 @@
 
 ---
 
+## v1.4.0 - 2025-12-31
+
+* Added Mini Mode: compact display for small screens, showing only essential quota info.
+* Added optional Progress Bars with color-coded warnings (green > 30%, yellow 10-30%, red < 10%).
+* Added "Progress Bars" toggle in Settings to switch between classic and visual modes.
+* Renamed "Grok 4 Heavy" to "Heavy" throughout the UI.
+* Updated default position for better visibility.
+* Simplified short descriptions in all 52 languages (removed specific model version mentions).
+* Updated long descriptions to clarify text conversation quota tracking (image/video generation not supported).
+
+---
+
 ## v1.3.0 - 2025-08-18
 
 * Added Reset Position button in Settings for easy panel repositioning.
