@@ -1,3 +1,7 @@
+> [!WARNING]
+> **專案狀態：已下架與封存**
+> 由於 xAI 頻繁變更 API 使得維護極為困難，本擴充功能已從 Chrome 線上應用程式商店下架，且後續不再提供更新。感謝所有曾支持與使用過本專案的朋友！
+
 # 🌟 Grok Usage Watch – Rate Limit Tracker
 
 🔎 即時顯示 Grok 使用量

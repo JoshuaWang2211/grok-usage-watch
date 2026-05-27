@@ -1,3 +1,7 @@
+> [!WARNING]
+> **Project Status: Archived & Deprecated**
+> This extension is no longer maintained and has been removed from the Chrome Web Store due to xAI's frequent API changes. Thank you to everyone who used and supported this project.
+
 # 🌟 Grok Usage Watch – Rate Limit Tracker
 
 🔎 Real-time display of your remaining Grok usage
