@@ -5,22 +5,25 @@ function toggleCollapse() {
   updateDisplay(lastData);
 }
 
-function createCollapseButton() {
+function createCollapseButton(mini = false) {
   const button = document.createElement('div');
   const colors = getTextColors();
+  const cfg = mini
+    ? { offset: '2px', size: '14px', font: '11px' }
+    : { offset: '6px', size: '16px', font: '12px' };
 
   button.className = 'no-drag';
   button.style.cssText = `
     position: absolute;
-    top: 6px;
-    left: 6px;
-    width: 16px;
-    height: 16px;
+    top: ${cfg.offset};
+    left: ${cfg.offset};
+    width: ${cfg.size};
+    height: ${cfg.size};
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
+    font-size: ${cfg.font};
     color: ${colors.label};
     opacity: 0.7;
     transition: opacity 0.2s ease;
@@ -46,18 +49,43 @@ let displayDiv = null;
 let currentView = 'main';
 let isCollapsed = false;
 let settings = {
-  hideGrok4Heavy: false,
   colorMode: 'light',
   isCollapsed: false,
   uiScale: 1.0,
-  miniMode: false,
-  showProgressBars: true
+  use24Hour: false,
+  hideBreakdown: false
 };
 
-let lastData = {
-  DEFAULT: { remaining: null, total: null, remainingTokens: null, totalTokens: null },
-  GROK4HEAVY: { remaining: null, total: null }
+const MODELS = [
+  { key: 'grok-3', label: 'Fast' }
+];
+
+const CREDITS_SERVICE = 'grok_api_v2.GrokBuildBilling';
+const CREDITS_METHOD = 'GetGrokCreditsConfig';
+
+const F_USAGE_PERCENT = 1;
+const F_PERIOD_END = 5;
+const F_PRODUCT_USAGE = 7;
+
+const PRODUCT_LABELS = {
+  2: 'Grok Build',
+  4: 'Chat',
+  5: 'Imagine',
+  6: 'Voice'
 };
+
+let lastData = { buckets: [], unauthorized: false, paid: null };
+
+const PANEL_WIDTH_PX = 200;
+const MINI_PANEL_WIDTH_PX = 80;
+const PANEL_PADDING_PX = 12;
+const PANEL_BORDER_PX = 1;
+const PANEL_DEFAULT_TOP_PX = 130;
+const PANEL_DEFAULT_RIGHT_PX = 44;
+const UI_SCALE_MIN = 0.7;
+const UI_SCALE_MAX = 1.5;
+
+let isResizing = false;
 
 function loadPosition() {
   try {
@@ -79,16 +107,32 @@ function savePosition(top, left) {
   }
 }
 
+function getDefaultPosition() {
+  const renderedWidth = PANEL_WIDTH_PX + (PANEL_PADDING_PX + PANEL_BORDER_PX) * 2;
+  return {
+    top: PANEL_DEFAULT_TOP_PX,
+    left: Math.max(0, window.innerWidth - renderedWidth - PANEL_DEFAULT_RIGHT_PX)
+  };
+}
+
 function loadSettings() {
   try {
     const saved = localStorage.getItem('grokUsageWatchSettings');
     if (saved) {
-      settings = { ...settings, ...JSON.parse(saved) };
+      const parsed = JSON.parse(saved);
+      settings = { ...settings, ...parsed };
       isCollapsed = settings.isCollapsed;
+
+      delete settings.hideGrok4Heavy;
+      delete settings.hiddenModels;
+      delete settings.miniMode;
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      settings.colorMode = 'dark';
     }
   } catch (e) {
 
   }
+
 }
 
 function saveSettings() {
@@ -125,10 +169,7 @@ function getTextColors() {
       section: "#bdc3c7",
       label: "#95a5a6",
       value: "#ecf0f1",
-      lowEffort: "#3498db",
-      highEffort: "#f39c12",
-      grok4Heavy: "#ecf0f1",
-      refill: "#bdc3c7",
+      link: "#3498db",
       loading: "#95a5a6"
     };
   } else {
@@ -137,10 +178,7 @@ function getTextColors() {
       section: "#34495e",
       label: "#5f6a6a",
       value: "#333",
-      lowEffort: "#2980b9",
-      highEffort: "#e67e22",
-      grok4Heavy: "#2c3e50",
-      refill: "#34495e",
+      link: "#2980b9",
       loading: "#7f8c8d"
     };
   }
@@ -233,30 +271,47 @@ function makeDraggable(element) {
   }
 }
 
-function formatWaitTime(seconds) {
-  if (!seconds || seconds <= 0) return "";
+const WARNING_THRESHOLD = 70;
+const CRITICAL_THRESHOLD = 90;
 
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-
-  if (minutes > 0) {
-    return `${minutes}m ${remainingSeconds}s`;
-  } else {
-    return `${remainingSeconds}s`;
-  }
-}
-
-const WARNING_THRESHOLD = 30;
-const CRITICAL_THRESHOLD = 10;
-
-function getQuotaColor(percentage) {
-  if (percentage <= CRITICAL_THRESHOLD) {
+function getQuotaColor(usedPercent) {
+  if (usedPercent >= CRITICAL_THRESHOLD) {
     return { color: '#e74c3c' };
-  } else if (percentage <= WARNING_THRESHOLD) {
+  } else if (usedPercent >= WARNING_THRESHOLD) {
     return { color: '#f39c12' };
   } else {
     return { color: '#27ae60' };
   }
+}
+
+function formatPercent(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+}
+
+function formatClockTime(date) {
+  return settings.use24Hour
+    ? date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    : date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
+
+function formatResetAt(resetAt) {
+  if (!resetAt) return null;
+  const date = new Date(resetAt);
+  const day = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${day} at ${formatClockTime(date)}`;
+}
+
+function formatResetIn(resetAt) {
+  if (!resetAt) return null;
+  const minutes = Math.floor((resetAt - Date.now()) / 60000);
+  if (!(minutes > 0)) return null;
+
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  return `${minutes}m`;
 }
 
 function createProgressBar(percentage, colorInfo, width = '100%') {
@@ -268,66 +323,28 @@ function createProgressBar(percentage, colorInfo, width = '100%') {
   `;
 }
 
-
-
-function getWaitTimeDisplay(data) {
-  const lowEffortWaitTime = data.DEFAULT?.lowEffortRateLimits?.waitTimeSeconds;
-  const highEffortWaitTime = data.DEFAULT?.highEffortRateLimits?.waitTimeSeconds;
-  const colors = getTextColors();
-
-  const hasLowEffortWait = lowEffortWaitTime && lowEffortWaitTime > 0;
-  const hasHighEffortWait = highEffortWaitTime && highEffortWaitTime > 0;
-
-  if (!hasLowEffortWait && !hasHighEffortWait) {
-    return "";
-  }
-
-  let waitTimeHtml = `
-    <div style="font-size: 14px; color: ${colors.refill}; font-weight: bold; margin-top: 12px; margin-bottom: 4px;">Refill in</div>
-    <div style="display: table; font-size: 16px; width: 100%;">
-  `;
-
-  if (hasLowEffortWait) {
-    waitTimeHtml += `
-      <div style="display: table-row;">
-        <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">Low Effort:</span>
-        <span style="display: table-cell; text-align: right; color: ${colors.lowEffort};">${formatWaitTime(lowEffortWaitTime)}</span>
-      </div>
-    `;
-  }
-
-  if (hasHighEffortWait) {
-    waitTimeHtml += `
-      <div style="display: table-row;">
-        <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">High Effort:</span>
-        <span style="display: table-cell; text-align: right; color: ${colors.highEffort};">${formatWaitTime(highEffortWaitTime)}</span>
-      </div>
-    `;
-  }
-
-  waitTimeHtml += `</div>`;
-  return waitTimeHtml;
-}
-
-function createSettingsButton() {
+function createSettingsButton(mini = false) {
   const button = document.createElement('div');
   const colors = getTextColors();
+  const cfg = mini
+    ? { offset: '2px', size: '14px', font: '9px', baseOpacity: '0.5', rotate: false }
+    : { offset: '6px', size: '18px', font: '11px', baseOpacity: '0.7', rotate: true };
 
   button.className = 'no-drag';
   button.style.cssText = `
     position: absolute;
-    top: 6px;
-    right: 6px;
-    width: 18px;
-    height: 18px;
+    top: ${cfg.offset};
+    right: ${cfg.offset};
+    width: ${cfg.size};
+    height: ${cfg.size};
     border-radius: 50%;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    font-size: ${cfg.font};
     color: ${colors.label};
-    opacity: 0.7;
+    opacity: ${cfg.baseOpacity};
     transition: all 0.2s ease;
     background: rgba(255,255,255,0.1);
   `;
@@ -337,11 +354,11 @@ function createSettingsButton() {
 
   button.onmouseenter = () => {
     button.style.opacity = '1';
-    button.style.transform = 'rotate(45deg)';
+    if (cfg.rotate) button.style.transform = 'rotate(45deg)';
   };
   button.onmouseleave = () => {
-    button.style.opacity = '0.7';
-    button.style.transform = 'rotate(0deg)';
+    button.style.opacity = cfg.baseOpacity;
+    if (cfg.rotate) button.style.transform = 'rotate(0deg)';
   };
 
   button.onclick = (e) => {
@@ -350,6 +367,17 @@ function createSettingsButton() {
   };
 
   return button;
+}
+
+function addButtonHover(btn) {
+  btn.onmouseenter = () => {
+    btn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)';
+    btn.style.borderColor = '#888';
+  };
+  btn.onmouseleave = () => {
+    btn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
+    btn.style.borderColor = getTextColors().label;
+  };
 }
 
 function createToggle(checked, onChange) {
@@ -472,131 +500,85 @@ function createColorModeToggle() {
   return container;
 }
 
-function createUIScaleSlider() {
-  const container = document.createElement('div');
+function createResizeHandle() {
+  const handle = document.createElement('div');
   const colors = getTextColors();
 
-  container.className = 'no-drag';
-  container.style.cssText = `
-    width: 150px;
-    height: 32px;
-    position: relative;
-    border-radius: 6px;
-    padding: 4px 12px;
+  handle.className = 'no-drag';
+  handle.style.cssText = `
+    position: absolute; right: 0; bottom: 0;
+    width: 22px; height: 22px; cursor: nwse-resize;
   `;
 
-  const track = document.createElement('div');
-  track.style.cssText = `
-    position: absolute;
-    top: 40%;
-    left: 12px;
-    right: 12px;
-    height: 2px;
-    background: ${settings.colorMode === 'dark' ? '#555' : '#ccc'};
-    border-radius: 1px;
-    z-index: 1;
+  const grip = document.createElement('div');
+  grip.style.cssText = `
+    position: absolute; right: 2px; bottom: 2px;
+    width: 18px; height: 18px; opacity: 0.5;
+    transition: opacity 0.2s ease; pointer-events: none;
+    background: linear-gradient(-45deg,
+      transparent 4px, ${colors.label} 4px, ${colors.label} 6px,
+      transparent 6px, transparent 8px,
+      ${colors.label} 8px, ${colors.label} 10px,
+      transparent 10px);
   `;
 
-  const scaleValues = [0.8, 0.9, 1.0, 1.1, 1.2];
-
-  scaleValues.forEach((scale, index) => {
-    const trackStart = 12;
-    const trackEnd = 150 - 12;
-    const trackLength = trackEnd - trackStart;
-    const tickPosition = trackStart + (index * trackLength) / (scaleValues.length - 1);
-
-    const tickContainer = document.createElement('div');
-    tickContainer.style.cssText = `
-      position: absolute;
-      top: 0;
-      left: ${tickPosition}px;
-      width: 40px;
-      height: 32px;
-      transform: translateX(-50%);
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      z-index: 2;
-    `;
-
-    const isActive = Math.abs(settings.uiScale - scale) < 0.01;
-
-    const tick = document.createElement('div');
-    tick.style.cssText = `
-      width: 4px;
-      height: ${isActive ? '14px' : '10px'};
-      background: ${isActive ? '#27ae60' : (settings.colorMode === 'dark' ? '#777' : '#999')};
-      transition: all 0.2s ease;
-      pointer-events: none;
-      border-radius: 2px;
-      margin-bottom: 2px;
-    `;
-
-    const label = document.createElement('div');
-    label.style.cssText = `
-      font-size: 7px;
-      color: ${isActive ? '#27ae60' : colors.label};
-      white-space: nowrap;
-      pointer-events: none;
-      font-weight: ${isActive ? 'bold' : 'normal'};
-      text-shadow: ${settings.colorMode === 'dark' ? '0 1px 1px rgba(0,0,0,0.5)' : 'none'};
-    `;
-    label.textContent = `${Math.round(scale * 100)}%`;
-
-    tickContainer.appendChild(tick);
-    tickContainer.appendChild(label);
-
-    tickContainer.onclick = (e) => {
-      e.stopPropagation();
-      applyUIScale(scale);
-    };
-
-    tickContainer.onmouseenter = () => {
-      if (!isActive) {
-        tick.style.background = settings.colorMode === 'dark' ? '#bdc3c7' : '#5d6d7e';
-        tick.style.height = '12px';
-        tick.style.width = '5px';
-        label.style.color = settings.colorMode === 'dark' ? '#bdc3c7' : '#5d6d7e';
-        label.style.fontWeight = 'bold';
-      }
-    };
-
-    tickContainer.onmouseleave = () => {
-      if (!isActive) {
-        tick.style.background = settings.colorMode === 'dark' ? '#777' : '#999';
-        tick.style.height = '10px';
-        tick.style.width = '4px';
-        label.style.color = colors.label;
-        label.style.fontWeight = 'normal';
-      }
-    };
-
-    container.appendChild(tickContainer);
-  });
-
-  container.appendChild(track);
-  return container;
+  handle.appendChild(grip);
+  handle.title = 'Drag to resize';
+  handle.onmouseenter = () => grip.style.opacity = '1';
+  handle.onmouseleave = () => grip.style.opacity = '0.55';
+  handle.onmousedown = startResize;
+  return handle;
 }
 
-function applyUIScale(scale) {
-  settings.uiScale = scale;
-  saveSettings();
-  applyCurrentUIScale();
-  setTimeout(() => {
-    updateDisplay(lastData);
-  }, 100);
+function startResize(e) {
+  if (!displayDiv) return;
+  e.preventDefault();
+  e.stopPropagation();
+  isResizing = true;
+
+  const startX = e.clientX;
+  const startY = e.clientY;
+  const startScale = settings.uiScale || 1.0;
+  const baseW = displayDiv.offsetWidth;
+  const baseH = displayDiv.offsetHeight;
+
+  displayDiv.style.transition = 'none';
+  displayDiv.style.left = (displayDiv.offsetLeft - baseW * (startScale - 1) / 2) + 'px';
+  displayDiv.style.top = (displayDiv.offsetTop - baseH * (startScale - 1) / 2) + 'px';
+  displayDiv.style.transformOrigin = '0 0';
+  displayDiv.style.transform = `scale(${startScale})`;
+
+  function onMove(ev) {
+    let s = startScale + ((ev.clientX - startX) / baseW + (ev.clientY - startY) / baseH) / 2;
+    s = Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, s));
+    settings.uiScale = s;
+    displayDiv.style.transform = `scale(${s})`;
+  }
+
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    const s = settings.uiScale;
+    displayDiv.style.left = Math.round(parseFloat(displayDiv.style.left) + baseW * (s - 1) / 2) + 'px';
+    displayDiv.style.top = Math.round(parseFloat(displayDiv.style.top) + baseH * (s - 1) / 2) + 'px';
+    displayDiv.style.transformOrigin = 'center center';
+    displayDiv.style.transition = 'transform 0.2s ease, opacity 0.3s ease';
+    isResizing = false;
+    saveSettings();
+    savePosition(parseInt(displayDiv.style.top) || 0, parseInt(displayDiv.style.left) || 0);
+    keepOnScreen();
+  }
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 }
 
 function applyCurrentUIScale() {
-  if (displayDiv) {
+  if (displayDiv && !isResizing) {
     displayDiv.style.transformOrigin = 'center center';
     displayDiv.style.transform = `scale(${settings.uiScale})`;
   }
 }
-
-
 
 function showSettings() {
   currentView = 'settings';
@@ -613,6 +595,10 @@ function showMain() {
   updateDisplay(lastData);
 }
 
+function currentPanelWidth() {
+  return (currentView === 'main' && isCollapsed) ? MINI_PANEL_WIDTH_PX : PANEL_WIDTH_PX;
+}
+
 function createDisplay() {
   if (!displayDiv) {
     displayDiv = document.createElement("div");
@@ -621,7 +607,7 @@ function createDisplay() {
     const styles = getOriginalStyles();
     displayDiv.style.position = "fixed";
     displayDiv.style.background = styles.background;
-    displayDiv.style.padding = "12px";
+    displayDiv.style.padding = PANEL_PADDING_PX + "px";
     displayDiv.style.border = styles.border;
     displayDiv.style.boxShadow = "0 4px 8px rgba(0, 0, 0, 0.1)";
     displayDiv.style.color = styles.color;
@@ -630,7 +616,7 @@ function createDisplay() {
     displayDiv.style.fontFamily = "Arial, sans-serif";
     displayDiv.style.cursor = "move";
     displayDiv.style.transition = "transform 0.2s ease, opacity 0.3s ease";
-    displayDiv.style.minWidth = settings.miniMode ? "80px" : "200px";
+    displayDiv.style.minWidth = currentPanelWidth() + "px";
 
     const savedPosition = loadPosition();
     if (savedPosition) {
@@ -638,19 +624,15 @@ function createDisplay() {
       displayDiv.style.left = savedPosition.left + "px";
       displayDiv.style.right = "auto";
     } else {
-      const elementWidth = settings.miniMode ? 80 : 200;
-      const defaultTop = 150;
-      const defaultRight = 35;
-      const defaultLeft = Math.max(0, window.innerWidth - elementWidth - defaultRight);
-
-      displayDiv.style.top = defaultTop + "px";
-      displayDiv.style.left = defaultLeft + "px";
+      const { top, left } = getDefaultPosition();
+      displayDiv.style.top = top + "px";
+      displayDiv.style.left = left + "px";
       displayDiv.style.right = "auto";
     }
 
     displayDiv.onmouseover = () => {
-      const currentScale = settings.uiScale || 1.0;
-      const hoverScale = currentScale * 1.05;
+      if (isResizing) return;
+      const hoverScale = (settings.uiScale || 1.0) * 1.05;
       displayDiv.style.transform = `scale(${hoverScale})`;
       displayDiv.style.transformOrigin = 'center';
     };
@@ -666,6 +648,21 @@ function createDisplay() {
   }
 }
 
+function keepOnScreen() {
+  if (!displayDiv || isResizing) return;
+  const scale = settings.uiScale || 1.0;
+  const w = displayDiv.offsetWidth;
+  const h = displayDiv.offsetHeight;
+  const overflowX = (w * scale - w) / 2;
+  const overflowY = (h * scale - h) / 2;
+  const maxLeft = Math.max(overflowX, window.innerWidth - w - overflowX);
+  const maxTop = Math.max(overflowY, window.innerHeight - h - overflowY);
+  const left = Math.round(Math.min(Math.max(overflowX, displayDiv.offsetLeft), maxLeft));
+  const top = Math.round(Math.min(Math.max(overflowY, displayDiv.offsetTop), maxTop));
+  if (left !== displayDiv.offsetLeft) { displayDiv.style.left = left + 'px'; displayDiv.style.right = 'auto'; }
+  if (top !== displayDiv.offsetTop) { displayDiv.style.top = top + 'px'; }
+}
+
 function updateDisplay(data) {
   createDisplay();
 
@@ -673,283 +670,143 @@ function updateDisplay(data) {
   displayDiv.style.background = styles.background;
   displayDiv.style.border = styles.border;
   displayDiv.style.color = styles.color;
-  displayDiv.style.minWidth = settings.miniMode ? "80px" : "200px";
+
+  const boxBefore = displayDiv.getBoundingClientRect();
+  const rightDocked = (boxBefore.left + boxBefore.right) / 2 > window.innerWidth / 2;
+  displayDiv.style.minWidth = currentPanelWidth() + "px";
 
   if (currentView === 'settings') {
     showSettingsView();
   } else if (currentView === 'about') {
     showAboutView();
   } else {
-    if (settings.miniMode) {
-      showMiniView(data);
-    } else {
-      showMainView(data);
+    showMainView(data);
+  }
+
+  if (rightDocked) {
+    const shift = boxBefore.right - displayDiv.getBoundingClientRect().right;
+    if (Math.abs(shift) >= 1) {
+      displayDiv.style.left = Math.round(displayDiv.offsetLeft + shift) + 'px';
+      displayDiv.style.right = 'auto';
+      savePosition(displayDiv.offsetTop, displayDiv.offsetLeft);
     }
   }
 
   applyCurrentUIScale();
+  keepOnScreen();
   lastData = { ...data };
   addAnimationStyles();
 }
 
-function showMiniView(data) {
-  const colors = getTextColors();
-  const lowRemaining = data.DEFAULT?.lowEffortRateLimits?.remainingQueries || 0;
-  const highRemaining = data.DEFAULT?.highEffortRateLimits?.remainingQueries || 0;
-  const totalTokens = data.DEFAULT?.totalTokens || 140;
-  const highEffortCost = data.DEFAULT?.highEffortRateLimits?.cost || 4;
-  const highTotal = Math.floor(totalTokens / highEffortCost);
-
-  const lowPercent = Math.round((lowRemaining / totalTokens) * 100);
-  const highPercent = Math.round((highRemaining / highTotal) * 100);
-
-  const lowColor = getQuotaColor(lowPercent);
-  const highColor = getQuotaColor(highPercent);
-
-  const lowEffortWaitTime = data.DEFAULT?.lowEffortRateLimits?.waitTimeSeconds;
-  const highEffortWaitTime = data.DEFAULT?.highEffortRateLimits?.waitTimeSeconds;
-  const hasLowWait = lowEffortWaitTime && lowEffortWaitTime > 0;
-  const hasHighWait = highEffortWaitTime && highEffortWaitTime > 0;
-
-  let statusIndicator = '';
-  if (hasLowWait || hasHighWait) {
-    let timerLines = '';
-    if (hasLowWait) {
-      timerLines += `<div>⏳ Lo: ${formatWaitTime(lowEffortWaitTime)}</div>`;
-    }
-    if (hasHighWait) {
-      timerLines += `<div>⏳ Hi: ${formatWaitTime(highEffortWaitTime)}</div>`;
-    }
-    statusIndicator = `<div style="font-size: 9px; color: #e74c3c; margin-top: 4px;">${timerLines}</div>`;
-  }
-
-  let contentHtml;
-  if (settings.showProgressBars) {
-    contentHtml = `
-      <div style="display: flex; flex-direction: column; gap: 6px;">
-        <div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 9px; color: ${colors.label};">Lo</span>
-            <span style="font-size: 11px; font-weight: bold; color: ${lowColor.color};">${lowPercent}%</span>
-          </div>
-          ${createProgressBar(lowPercent, lowColor)}
-        </div>
-        <div>
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 9px; color: ${colors.label};">Hi</span>
-            <span style="font-size: 11px; font-weight: bold; color: ${highColor.color};">${highPercent}%</span>
-          </div>
-          ${createProgressBar(highPercent, highColor)}
-        </div>
-      </div>
-    `;
-  } else {
-    contentHtml = `
-      <div style="display: flex; flex-direction: column; gap: 2px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 9px; color: ${colors.label};">Lo:</span>
-          <span style="font-size: 12px; font-weight: bold; color: ${colors.lowEffort};">${lowRemaining}</span>
-        </div>
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 9px; color: ${colors.label};">Hi:</span>
-          <span style="font-size: 12px; font-weight: bold; color: ${colors.highEffort};">${highRemaining}</span>
-        </div>
-      </div>
-    `;
-  }
-
-  displayDiv.innerHTML = `
-    <div style="padding: 4px 6px; text-align: center; position: relative;">
-      <div style="font-size: 10px; color: ${colors.label}; margin-bottom: 6px;">Usage</div>
-      ${contentHtml}
-      ${statusIndicator}
-    </div>
-  `;
-
-  displayDiv.appendChild(createMiniSettingsButton());
-}
-
-function createMiniSettingsButton() {
-  const button = document.createElement('div');
-  const colors = getTextColors();
-
-  button.className = 'no-drag';
-  button.style.cssText = `
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 9px;
-    color: ${colors.label};
-    opacity: 0.5;
-    transition: all 0.2s ease;
-    background: rgba(255,255,255,0.1);
-  `;
-
-  button.innerHTML = '⚙';
-  button.title = 'Settings';
-
-  button.onmouseenter = () => {
-    button.style.opacity = '1';
-  };
-  button.onmouseleave = () => {
-    button.style.opacity = '0.5';
-  };
-
-  button.onclick = (e) => {
-    e.stopPropagation();
-    showSettings();
-  };
-
-  return button;
-}
-
 function showMainView(data) {
-  const shouldFade = (kind, type) => lastData[kind][type] !== null && lastData[kind][type] !== data[kind][type];
-  const waitTimeDisplay = getWaitTimeDisplay(data);
   const colors = getTextColors();
-
-  const lowRemaining = data.DEFAULT?.lowEffortRateLimits?.remainingQueries || 0;
-  const highRemaining = data.DEFAULT?.highEffortRateLimits?.remainingQueries || 0;
-  const totalTokens = data.DEFAULT?.totalTokens || 140;
-  const highEffortCost = data.DEFAULT?.highEffortRateLimits?.cost || 4;
-  const highTotal = Math.floor(totalTokens / highEffortCost);
-
-  const lowPercent = Math.round((lowRemaining / totalTokens) * 100);
-  const highPercent = Math.round((highRemaining / highTotal) * 100);
-
-  const lowColor = getQuotaColor(lowPercent);
-  const highColor = getQuotaColor(highPercent);
+  const buckets = data.buckets || [];
 
   if (isCollapsed) {
+    let titleText = '...';
+    let titleColor = colors.loading;
+    if (data.unauthorized) {
+      titleText = '🔒';
+    } else if (data.paid) {
+      titleText = `${formatPercent(data.paid.used)}%`;
+      titleColor = getQuotaColor(data.paid.used).color;
+    } else if (buckets.length > 0) {
+      titleText = `${buckets[0].percent}%`;
+      titleColor = getQuotaColor(buckets[0].used).color;
+    }
     displayDiv.innerHTML = `
       <div style="padding: 2px 0;">
-        <strong style="color: ${colors.title}; font-size: 16px; display: block; text-align: center; margin: 0;">Grok Usage Watch</strong>
+        <strong style="color: ${titleColor}; font-size: 14px; display: block; text-align: center; margin: 0;">${titleText}</strong>
       </div>
     `;
-    displayDiv.appendChild(createCollapseButton());
-    displayDiv.appendChild(createSettingsButton());
+    displayDiv.appendChild(createCollapseButton(true));
+    displayDiv.appendChild(createSettingsButton(true));
     return;
   }
 
-  let grok4HeavySection = '';
-  if (!settings.hideGrok4Heavy) {
-    const heavyRemaining = data.GROK4HEAVY?.remaining || 0;
-    const heavyTotal = data.GROK4HEAVY?.total || 3;
-    const heavyPercent = Math.round((heavyRemaining / heavyTotal) * 100);
-    const heavyColor = getQuotaColor(heavyPercent);
+  let body;
+  if (data.unauthorized) {
+    body = `<div style="color: ${colors.loading}; text-align: center; padding: 6px 0;">Sign in to grok.com</div>`;
+  } else if (data.paid) {
+    const quotaColor = getQuotaColor(data.paid.used);
+    const resetAt = formatResetAt(data.paid.resetAt);
+    const resetIn = formatResetIn(data.paid.resetAt);
 
-    if (settings.showProgressBars) {
-      grok4HeavySection = `
-        <div style="font-size: 14px; color: ${colors.section}; font-weight: bold; margin-top: 12px; margin-bottom: 4px;">Special Feature</div>
-        <div style="margin-bottom: 8px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 13px; color: ${colors.label};">Heavy</span>
-            <span style="font-size: 13px; font-weight: bold; color: ${heavyColor.color};">${heavyRemaining}/${heavyTotal} (${heavyPercent}%)</span>
-          </div>
-          ${createProgressBar(heavyPercent, heavyColor)}
+    const breakdown = (!settings.hideBreakdown && data.paid.products.length) ? `
+      <div style="font-size: 12px; color: ${colors.section}; font-weight: bold; margin-bottom: 4px;">Breakdown</div>
+      ${data.paid.products.map(product => `
+        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 3px;">
+          <span style="font-size: 11px; color: ${colors.label};">${product.label}</span>
+          <span style="font-size: 11px; color: ${colors.value};">${formatPercent(product.percent)}%</span>
         </div>
-      `;
-    } else {
-      grok4HeavySection = `
-        <div style="font-size: 14px; color: ${colors.section}; font-weight: bold; margin-top: 12px; margin-bottom: 4px;">Special Feature</div>
-        <div style="display: table; font-size: 16px; width: 100%;">
-          <div style="display: table-row;">
-            <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">Heavy:</span>
-            <span style="display: table-cell; text-align: right; color: ${colors.grok4Heavy};">${heavyRemaining} / ${heavyTotal}</span>
-          </div>
-        </div>
-      `;
-    }
-  }
+      `).join('')}
+    ` : '';
 
-  let tokensSection;
-  if (settings.showProgressBars) {
-    tokensSection = `
-      <div style="margin-bottom: 10px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 13px; color: ${colors.label};">Low Effort</span>
-          <span style="font-size: 13px; font-weight: bold; color: ${lowColor.color};">${lowRemaining}/${totalTokens} (${lowPercent}%)</span>
-        </div>
-        ${createProgressBar(lowPercent, lowColor)}
+    body = `
+      <div style="margin-bottom: ${breakdown ? '14px' : '4px'};">
+        <div style="font-size: 12px; color: ${colors.section}; font-weight: bold; margin-bottom: 4px;">Weekly limit</div>
+        <div style="font-size: 13px; font-weight: bold; color: ${quotaColor.color};">${formatPercent(data.paid.used)}% used</div>
+        ${createProgressBar(data.paid.used, quotaColor)}
+        ${resetAt ? `<div style="font-size: 11px; color: ${colors.label}; margin-top: 4px;">Resets ${resetAt}</div>` : ''}
+        ${resetIn ? `<div style="font-size: 11px; color: ${colors.label};">in ${resetIn}</div>` : ''}
       </div>
-      
-      <div style="margin-bottom: 4px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <span style="font-size: 13px; color: ${colors.label};">High Effort</span>
-          <span style="font-size: 13px; font-weight: bold; color: ${highColor.color};">${highRemaining}/${highTotal} (${highPercent}%)</span>
-        </div>
-        ${createProgressBar(highPercent, highColor)}
-      </div>
+      ${breakdown}
     `;
+  } else if (buckets.length === 0) {
+    body = `<div style="color: ${colors.loading}; text-align: center; padding: 6px 0;">Loading...</div>`;
   } else {
-    tokensSection = `
-      <div style="display: table; font-size: 16px; width: 100%;">
-        <div style="display: table-row;">
-          <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">Low Effort:</span>
-          <span style="display: table-cell; text-align: right; color: ${colors.lowEffort};">${lowRemaining} / ${totalTokens}</span>
+    body = buckets.map(b => {
+      const quotaColor = getQuotaColor(b.used);
+      return `
+        <div style="margin-bottom: 4px;">
+          <div style="font-size: 12px; color: ${colors.section}; font-weight: bold; margin-bottom: 4px;">${b.label}</div>
+          <div style="font-size: 13px; font-weight: bold; color: ${quotaColor.color};">${b.remaining} / ${b.total} left</div>
+          ${createProgressBar(b.percent, quotaColor)}
         </div>
-        <div style="display: table-row;">
-          <span style="display: table-cell; padding-right: 12px; color: ${colors.label};">High Effort:</span>
-          <span style="display: table-cell; text-align: right; color: ${colors.highEffort};">${highRemaining} / ${highTotal}</span>
-        </div>
-      </div>
-    `;
+      `;
+    }).join('');
   }
 
   displayDiv.innerHTML = `
     <strong style="color: ${colors.title}; font-size: 16px; display: block; text-align: center;">Grok Usage Watch</strong>
-    <div style="margin-top: 8px;">
-      <div style="font-size: 14px; color: ${colors.section}; font-weight: bold; margin-bottom: 8px;">Tokens</div>
-      ${tokensSection}
-      ${grok4HeavySection}
+    <div style="margin-top: 10px;">
+      ${body}
     </div>
-    ${waitTimeDisplay}
   `;
 
   displayDiv.appendChild(createCollapseButton());
   displayDiv.appendChild(createSettingsButton());
+  displayDiv.appendChild(createResizeHandle());
 }
 
 function showSettingsView() {
   const colors = getTextColors();
 
+  const paidPanel = !!lastData.paid;
+
   displayDiv.innerHTML = `
     <strong style="color: ${colors.title}; font-size: 16px; display: block; text-align: center;">Settings</strong>
     <div style="margin-top: 8px;">
+      ${paidPanel ? `
       <div style="padding: 6px; margin-bottom: 6px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="flex: 1;">
-            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Mini Mode</div>
+            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Hide Breakdown</div>
           </div>
-          <div id="mini-mode-toggle" style="margin-left: 8px;"></div>
+          <div id="hide-breakdown-toggle" style="margin-left: 8px;"></div>
         </div>
       </div>
-      
+
       <div style="padding: 6px; margin-bottom: 6px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="flex: 1;">
-            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Progress Bars</div>
+            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">24-Hour Time</div>
           </div>
-          <div id="progress-bars-toggle" style="margin-left: 8px;"></div>
+          <div id="time-format-toggle" style="margin-left: 8px;"></div>
         </div>
       </div>
-      
-      <div style="padding: 6px; margin-bottom: 6px;">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-          <div style="flex: 1;">
-            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Hide Heavy</div>
-          </div>
-          <div id="hide-toggle" style="margin-left: 8px;"></div>
-        </div>
-      </div>
-      
+      ` : ''}
+
       <div style="padding: 6px; margin-bottom: 6px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="flex: 1;">
@@ -962,23 +819,12 @@ function showSettingsView() {
       <div style="padding: 6px; margin-bottom: 6px;">
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div style="flex: 1;">
-            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Reset Position</div>
+            <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">Reset UI</div>
           </div>
-          <button id="reset-position-btn" class="no-drag" style="background: ${settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)'}; border: 1px solid ${colors.label}; color: ${colors.title}; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s ease; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;" title="Restore to default position">↺</button>
+          <button id="reset-position-btn" class="no-drag" style="background: ${settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)'}; border: 1px solid ${colors.label}; color: ${colors.title}; padding: 4px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s ease; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;" title="Restore default position and size">↺</button>
         </div>
       </div>
-      
-      <div style="padding: 6px; margin-bottom: 6px;">
-        <div style="display: flex; flex-direction: column;">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-            <div style="flex: 1;">
-              <div style="font-size: 13px; font-weight: bold; color: ${colors.title};">UI Scale</div>
-            </div>
-          </div>
-          <div id="ui-scale-slider" style="display: flex; justify-content: center; height: 38px; align-items: center;"></div>
-        </div>
-      </div>
-      
+
       <div class="no-drag" style="text-align: center; margin-top: 8px; display: flex; justify-content: space-between;">
         <button id="close-settings" style="background: ${settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)'}; border: 1px solid ${colors.label}; color: ${colors.title}; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; flex: 1; margin-right: 4px; transition: all 0.2s ease;">Back</button>
         <button id="show-about" style="background: ${settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)'}; border: 1px solid ${colors.label}; color: ${colors.title}; padding: 3px 10px; border-radius: 4px; cursor: pointer; font-size: 10px; flex: 1; margin-left: 4px; transition: all 0.2s ease;">About</button>
@@ -988,84 +834,44 @@ function showSettingsView() {
 
   const closeBtn = displayDiv.querySelector('#close-settings');
   closeBtn.onclick = showMain;
-  closeBtn.onmouseenter = () => {
-    closeBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)';
-    closeBtn.style.borderColor = settings.colorMode === 'dark' ? '#888' : '#888';
-  };
-  closeBtn.onmouseleave = () => {
-    closeBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
-    closeBtn.style.borderColor = getTextColors().label;
-  };
+  addButtonHover(closeBtn);
 
   const aboutBtn = displayDiv.querySelector('#show-about');
   aboutBtn.onclick = showAbout;
-  aboutBtn.onmouseenter = () => {
-    aboutBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)';
-    aboutBtn.style.borderColor = settings.colorMode === 'dark' ? '#888' : '#888';
-  };
-  aboutBtn.onmouseleave = () => {
-    aboutBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
-    aboutBtn.style.borderColor = getTextColors().label;
-  };
+  addButtonHover(aboutBtn);
 
-  const miniModeContainer = displayDiv.querySelector('#mini-mode-toggle');
-  const miniModeToggle = createToggle(settings.miniMode, (checked) => {
-    settings.miniMode = checked;
-    saveSettings();
-  });
-  miniModeContainer.appendChild(miniModeToggle);
+  if (paidPanel) {
+    displayDiv.querySelector('#hide-breakdown-toggle').appendChild(
+      createToggle(settings.hideBreakdown, (checked) => {
+        settings.hideBreakdown = checked;
+        saveSettings();
+      })
+    );
 
-  const progressBarsContainer = displayDiv.querySelector('#progress-bars-toggle');
-  const progressBarsToggle = createToggle(settings.showProgressBars, (checked) => {
-    settings.showProgressBars = checked;
-    saveSettings();
-  });
-  progressBarsContainer.appendChild(progressBarsToggle);
+    displayDiv.querySelector('#time-format-toggle').appendChild(
+      createToggle(settings.use24Hour, (checked) => {
+        settings.use24Hour = checked;
+        saveSettings();
+      })
+    );
+  }
 
-  const hideToggleContainer = displayDiv.querySelector('#hide-toggle');
-  const hideToggle = createToggle(settings.hideGrok4Heavy, (checked) => {
-    settings.hideGrok4Heavy = checked;
-    saveSettings();
-  });
-  hideToggleContainer.appendChild(hideToggle);
-
-  const colorToggleContainer = displayDiv.querySelector('#color-toggle');
-  const colorToggle = createColorModeToggle();
-  colorToggleContainer.appendChild(colorToggle);
-
-  const uiScaleContainer = displayDiv.querySelector('#ui-scale-slider');
-  const uiScaleSlider = createUIScaleSlider();
-  uiScaleContainer.appendChild(uiScaleSlider);
-
+  displayDiv.querySelector('#color-toggle').appendChild(createColorModeToggle());
 
   const resetPositionBtn = displayDiv.querySelector('#reset-position-btn');
   resetPositionBtn.onclick = () => {
-
-    const elementWidth = settings.miniMode ? 80 : 200;
-    const defaultTop = 130;
-    const defaultRight = 70;
-    const defaultLeft = Math.max(0, window.innerWidth - elementWidth - defaultRight);
-
-    displayDiv.style.top = defaultTop + 'px';
-    displayDiv.style.left = defaultLeft + 'px';
+    const { top, left } = getDefaultPosition();
+    displayDiv.style.top = top + 'px';
+    displayDiv.style.left = left + 'px';
     displayDiv.style.right = 'auto';
-
-
-    savePosition(defaultTop, defaultLeft);
-
-
+    savePosition(top, left);
+    settings.uiScale = 1.0;
+    saveSettings();
     showMain();
   };
+  addButtonHover(resetPositionBtn);
 
-  resetPositionBtn.onmouseenter = () => {
-    resetPositionBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)';
-    resetPositionBtn.style.borderColor = settings.colorMode === 'dark' ? '#888' : '#888';
-  };
-
-  resetPositionBtn.onmouseleave = () => {
-    resetPositionBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
-    resetPositionBtn.style.borderColor = getTextColors().label;
-  };
+  displayDiv.appendChild(createResizeHandle());
 }
 
 function showAboutView() {
@@ -1077,7 +883,7 @@ function showAboutView() {
       
       <div style="height: 235px; overflow-y: auto; padding-right: 8px; margin-bottom: 8px; scrollbar-width: thin;">
         <div style="color: ${colors.title}; font-size: 14px; font-weight: bold; margin-bottom: 8px;">Grok Usage Watch</div>
-        <div style="color: ${colors.label}; font-size: 12px; margin-bottom: 4px;"><strong>Version:</strong> 1.4.0</div>
+        <div style="color: ${colors.label}; font-size: 12px; margin-bottom: 4px;"><strong>Version:</strong> ${chrome.runtime.getManifest().version}</div>
         <div style="color: ${colors.label}; font-size: 12px; margin-bottom: 12px;"><strong>Author:</strong> Joshua Wang</div>
         
         <div style="color: ${colors.value}; font-size: 12px; line-height: 1.5; margin-bottom: 12px;">
@@ -1085,11 +891,9 @@ function showAboutView() {
           Free, simple, and shared with joy.
         </div>
         
-
-        
         <div style="color: ${colors.value}; font-size: 12px; line-height: 1.5;">
           If you enjoy it,<br>
-          please <a href="https://chrome.google.com/webstore/detail/bmpboaihdkpkjehbceegdmndkonlpdge" target="_blank" class="no-drag" style="color: ${colors.lowEffort}; text-decoration: underline;">leave a review</a><br>
+          please <a href="https://chrome.google.com/webstore/detail/bmpboaihdkpkjehbceegdmndkonlpdge" target="_blank" class="no-drag" style="color: ${colors.link}; text-decoration: underline;">leave a review</a><br>
           and share it with others <span style="color: #e74c3c;">❤️</span>
         </div>
       </div>
@@ -1102,14 +906,9 @@ function showAboutView() {
 
   const closeBtn = displayDiv.querySelector('#close-about');
   closeBtn.onclick = showMain;
-  closeBtn.onmouseenter = () => {
-    closeBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.6)';
-    closeBtn.style.borderColor = settings.colorMode === 'dark' ? '#888' : '#888';
-  };
-  closeBtn.onmouseleave = () => {
-    closeBtn.style.background = settings.colorMode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)';
-    closeBtn.style.borderColor = getTextColors().label;
-  };
+  addButtonHover(closeBtn);
+
+  displayDiv.appendChild(createResizeHandle());
 }
 
 function addAnimationStyles() {
@@ -1148,7 +947,7 @@ function fetchRateLimits(kind, model) {
     })
   })
     .then(response => {
-      if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
         throw new Error('UNAUTHORIZED');
       }
       if (response.ok) {
@@ -1159,65 +958,234 @@ function fetchRateLimits(kind, model) {
     });
 }
 
-function checkRateLimits() {
-  const results = {};
-  let isUnauthorized = false;
+async function checkRateLimits() {
+  const buckets = [];
 
-  fetchRateLimits("DEFAULT", "grok-3")
-    .then(data => {
-      results.DEFAULT = {
-        remaining: data.remainingQueries,
-        total: data.totalQueries,
-        remainingTokens: data.remainingTokens,
-        totalTokens: data.totalTokens,
-        lowEffortRateLimits: data.lowEffortRateLimits,
-        highEffortRateLimits: data.highEffortRateLimits,
-        windowSizeSeconds: data.windowSizeSeconds
-      };
-
-      return fetchRateLimits("DEFAULT", "grok-4-heavy");
-    })
-    .then(data => {
-      results.GROK4HEAVY = {
-        remaining: data.remainingQueries,
-        total: data.totalQueries
-      };
-      updateDisplay(results);
-    })
-    .catch(err => {
+  for (const model of MODELS) {
+    let data;
+    try {
+      data = await fetchRateLimits("DEFAULT", model.key);
+    } catch (err) {
       if (err.message === 'UNAUTHORIZED') {
-        isUnauthorized = true;
-        createDisplay();
-        if (displayDiv) {
-          const colors = getTextColors();
-          displayDiv.innerHTML = `
-            <strong style="color: ${colors.title}; font-size: 16px; display: block; text-align: center;">Grok Usage Watch</strong>
-            <div style="margin-top: 8px;">
-              <div style="color: ${colors.loading}; text-align: center;">Loading...</div>
-            </div>
-          `;
-        }
+        updateDisplay({ buckets: [], unauthorized: true, paid: null });
         return;
       }
+      continue;
+    }
 
-      results.DEFAULT = results.DEFAULT || {
-        remaining: "Error",
-        total: "Error",
-        remainingTokens: null,
-        totalTokens: null
-      };
-      results.GROK4HEAVY = {
-        remaining: "Error",
-        total: "Error"
-      };
-      updateDisplay(results);
+    const total = Number(data.totalQueries);
+    const remaining = Number(data.remainingQueries);
+
+    if (!Number.isFinite(total) || total <= 0 || !Number.isFinite(remaining)) {
+      continue;
+    }
+
+    const percent = Math.round((remaining / total) * 100);
+    buckets.push({
+      key: model.key,
+      label: model.label,
+      hue: model.hue,
+      remaining,
+      total,
+      percent,
+      used: 100 - percent
     });
+  }
+
+  if (buckets.length === 0 && lastData.buckets.length > 0) {
+    return;
+  }
+
+  updateDisplay({ buckets, unauthorized: false, paid: null });
+}
+
+function decodeProto(bytes) {
+  const out = {};
+  let at = 0;
+
+  const varint = () => {
+    let value = 0;
+    let scale = 1;
+    while (at < bytes.length) {
+      const byte = bytes[at++];
+      value += (byte & 0x7f) * scale;
+      if (!(byte & 0x80)) break;
+      scale *= 128;
+    }
+    return value;
+  };
+
+  while (at < bytes.length) {
+    const key = varint();
+    const field = Math.floor(key / 8);
+    const wire = key & 7;
+    if (!field) break;
+
+    if (wire === 0) {
+      (out[field] || (out[field] = [])).push(varint());
+    } else if (wire === 2) {
+      const len = varint();
+      if (at + len > bytes.length) break;
+      (out[field] || (out[field] = [])).push(bytes.subarray(at, at + len));
+      at += len;
+    } else if (wire === 5) {
+      (out[field] || (out[field] = [])).push(
+        new DataView(bytes.buffer, bytes.byteOffset + at, 4).getFloat32(0, true)
+      );
+      at += 4;
+    } else if (wire === 1) {
+      at += 8;
+    } else {
+      break;
+    }
+  }
+
+  return out;
+}
+
+function first(fields, number) {
+  const values = fields[number];
+  return values && values.length ? values[0] : undefined;
+}
+
+function fetchCreditsConfig() {
+  return fetch(`https://grok.com/${CREDITS_SERVICE}/${CREDITS_METHOD}`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/grpc-web+proto",
+      "X-Grpc-Web": "1"
+    },
+    body: new Uint8Array(5)
+  }).then(response => {
+    if (response.status === 401) {
+      throw new Error('UNAUTHORIZED');
+    }
+    if (!response.ok) {
+      throw new Error(`Credits config failed with status: ${response.status}`);
+    }
+    return response.arrayBuffer();
+  }).then(buffer => {
+    const bytes = new Uint8Array(buffer);
+    let at = 0;
+
+    while (at + 5 <= bytes.length) {
+      const flag = bytes[at];
+      const view = new DataView(bytes.buffer, bytes.byteOffset + at + 1, 4);
+      const len = view.getUint32(0, false);
+      const body = bytes.subarray(at + 5, at + 5 + len);
+      at += 5 + len;
+      if ((flag & 0x80) === 0) {
+        return decodeProto(body);
+      }
+    }
+
+    throw new Error('Credits config returned no data frame');
+  });
+}
+
+function readPaidUsage(response) {
+  const configBytes = first(response, 1);
+  if (!configBytes) {
+    return null;
+  }
+
+  const config = decodeProto(configBytes);
+
+  const usedRaw = first(config, F_USAGE_PERCENT);
+  const used = Number.isFinite(usedRaw) ? Math.max(0, Math.min(100, usedRaw)) : 0;
+
+  let resetAt = null;
+  const periodEnd = first(config, F_PERIOD_END);
+  if (periodEnd) {
+    const seconds = first(decodeProto(periodEnd), 1);
+    if (Number.isFinite(seconds) && seconds > 0) {
+      resetAt = seconds * 1000;
+    }
+  }
+
+  const products = (config[F_PRODUCT_USAGE] || [])
+    .map(entry => {
+      const parsed = decodeProto(entry);
+      const id = first(parsed, 1);
+      const percent = first(parsed, 2);
+      return {
+        id,
+        label: PRODUCT_LABELS[id] || 'Other',
+        percent: Number.isFinite(percent) ? percent : 0
+      };
+    })
+    .filter(product => product.percent > 0)
+    .sort((a, b) => b.percent - a.percent);
+
+  return { used, resetAt, products };
+}
+
+async function checkPaidUsage() {
+  let paid;
+  try {
+    paid = readPaidUsage(await fetchCreditsConfig());
+  } catch (err) {
+    if (err.message === 'UNAUTHORIZED') {
+      updateDisplay({ buckets: [], unauthorized: true, paid: null });
+      return;
+    }
+    if (!lastData.paid) {
+      updateDisplay({ buckets: [], unauthorized: false, paid: null });
+    }
+    return;
+  }
+
+  if (!paid && lastData.paid) {
+    return;
+  }
+
+  updateDisplay({ buckets: [], unauthorized: false, paid });
+}
+
+async function fetchActiveSubscription() {
+  try {
+    const response = await fetch("https://grok.com/rest/subscriptions", {
+      credentials: "include"
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json();
+    const list = data && Array.isArray(data.subscriptions) ? data.subscriptions : [];
+    return list.find(entry => entry && entry.status === 'SUBSCRIPTION_STATUS_ACTIVE') || false;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function refresh() {
+  const active = await fetchActiveSubscription();
+
+  if (active) {
+    await checkPaidUsage();
+  } else {
+    await checkRateLimits();
+  }
 }
 
 loadSettings();
-checkRateLimits();
-setInterval(checkRateLimits, 5000);
+refresh();
+
+setInterval(() => {
+  if (!document.hidden) refresh();
+}, 60000);
+
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) refresh();
+});
 
 document.addEventListener("submit", function () {
-  setTimeout(checkRateLimits, 1000);
+  setTimeout(refresh, 1000);
+});
+
+let resizeDebounce;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeDebounce);
+  resizeDebounce = setTimeout(keepOnScreen, 150);
 });

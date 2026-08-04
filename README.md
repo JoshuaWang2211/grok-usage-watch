@@ -1,7 +1,3 @@
-> [!WARNING]
-> **Project Status: Archived & Deprecated**
-> This extension is no longer maintained and has been removed from the Chrome Web Store due to xAI's frequent API changes. Thank you to everyone who used and supported this project.
-
 # 🌟 Grok Usage Watch – Rate Limit Tracker
 
 🔎 Real-time display of your remaining Grok usage
@@ -21,10 +17,23 @@ It features a clean, draggable floating window that keeps your usage always visi
 ## ✨ Key Features
 
 * Real-time usage tracking
-* Supports both free and subscribed Grok users
+* Works with both free and paid Grok accounts
 * Draggable, floating overlay UI
-* Refill countdown timer when limits are hit 
+* Drag the corner grip to resize the panel
+* Collapse to a compact indicator when you want it out of the way
 * Light/Dark mode toggle
+
+---
+
+## 📊 What You See
+
+Grok meters free and paid accounts in completely different ways, so the panel shows
+whichever one applies to your account.
+
+| Account | Panel shows |
+|---|---|
+| Free | Remaining Fast queries |
+| Paid plan | Weekly usage pool — how much is used, when it resets, and a breakdown by product such as Chat and Imagine |
 
 ---
 
@@ -62,7 +71,7 @@ Everything runs locally in your browser. No data is collected, stored, or shared
 
 ## ⚠️ Important Note
 
-This extension relies on Grok.com's current public API. If xAI changes or restricts this API in the future, some features may be affected.
+This extension depends on Grok's current internal API. If xAI makes changes to the website, this extension may stop working and be temporarily or indefinitely removed from the store.
 
 ---
 

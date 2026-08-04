@@ -2,6 +2,25 @@
 
 ---
 
+## v1.5.0 - 2026-08-03
+
+* Fixed the panel showing no usage: xAI replaced the quota API, so the fields the extension read were gone and it reported 0 even when the request succeeded.
+* Added support for paid plans, which are metered by one weekly usage pool shared across every Grok product rather than by per-model query counts. The extension detects which system applies to your account automatically.
+* Paid accounts now see their weekly pool: how much is used, when it resets, and a breakdown by product: Chat, Imagine, Voice and Grok Build.
+* Free accounts now show the Fast quota only. The Expert and Heavy rows reported quota for modes a free account cannot select, which looked like headroom that was not really there.
+* Removed the "Refill in" countdown. The API never reported when a quota resets, and a locally guessed estimate was wrong whenever the account had also been used in the Grok mobile app. Paid plans show a real reset time, which comes from the server.
+* Removed Mini Mode, since collapsing the panel already produced the same compact view.
+* Removed the model selection in Settings, along with the Progress Bars toggle. Progress bars are now always on.
+* Added drag-to-resize: drag the corner grip instead of choosing from five fixed sizes.
+* Added a Reset UI button that restores both position and size.
+* Added 24-Hour Time and Hide Breakdown options for paid accounts.
+* Added system light/dark theme detection on first run.
+* Fixed "Reset Position" restoring a position that was not actually the default.
+* Reduced the refresh interval from 5 seconds to once a minute, paused while the tab is hidden.
+* Rewrote the store description in all supported languages.
+
+---
+
 ## v1.4.0 - 2025-12-31
 
 * Added Mini Mode: compact display for small screens, showing only essential quota info.
