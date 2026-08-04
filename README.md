@@ -39,11 +39,11 @@ whichever one applies to your account.
 
 ## 📸 Screenshots
 
-![Grok Usage Watch screenshot](assets/screenshot.png)
+![Grok Usage Watch screenshot](assets/screenshot.jpg)
 
 ---
 
-![Grok Usage Watch screenshot2](assets/screenshot2.png)
+![Grok Usage Watch screenshot2](assets/screenshot2.jpg)
 
 ---
 
