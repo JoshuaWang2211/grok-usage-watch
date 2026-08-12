@@ -2,6 +2,8 @@
 
 🔎 即時顯示 Grok 使用量
 
+⭐ 獲 Chrome Web Store 列為精選商品 · 1,000+ Chrome Web Store 使用者
+
 📘 [View in English](./README.md)
 
 ---

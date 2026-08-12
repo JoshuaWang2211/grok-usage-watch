@@ -2,6 +2,8 @@
 
 🔎 Real-time display of your remaining Grok usage
 
+⭐ Featured on Chrome Web Store · 1,000+ Chrome Web Store users
+
 📘 [View in Traditional Chinese / 繁體中文](./README.zh-TW.md)
 
 ---
