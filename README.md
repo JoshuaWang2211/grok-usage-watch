@@ -65,7 +65,7 @@ Install directly from the Chrome Web Store: [Click here](https://chrome.google.c
 
 ## 🔒 Privacy & Permissions
 
-* `"host_permissions": ["https://grok.com/*"]`  
+* No permissions requested. The extension runs only on `grok.com` (content script) and touches no other site.
 
 Everything runs locally in your browser. No data is collected, stored, or shared.
 

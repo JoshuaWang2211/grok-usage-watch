@@ -960,6 +960,7 @@ function fetchRateLimits(kind, model) {
 
 async function checkRateLimits() {
   const buckets = [];
+  let answered = false;
 
   for (const model of MODELS) {
     let data;
@@ -972,6 +973,7 @@ async function checkRateLimits() {
       }
       continue;
     }
+    answered = true;
 
     const total = Number(data.totalQueries);
     const remaining = Number(data.remainingQueries);
@@ -992,7 +994,18 @@ async function checkRateLimits() {
     });
   }
 
-  if (buckets.length === 0 && lastData.buckets.length > 0) {
+  // A transient failure must not wipe a good panel: keep the last free view,
+  // the last paid view (its buckets are always empty, so checking
+  // lastData.buckets alone would wipe it to "Loading..."), and the sign-in
+  // prompt (actionable, unlike the "Loading..." that would replace it).
+  // Only when the endpoint did not answer at all — an answered-but-empty
+  // result (an account with no entitlement) falls through so the panel
+  // reflects reality instead of freezing stale numbers forever.
+  if (
+    buckets.length === 0 &&
+    !answered &&
+    (lastData.buckets.length > 0 || lastData.paid || lastData.unauthorized)
+  ) {
     return;
   }
 
@@ -1092,9 +1105,6 @@ function readPaidUsage(response) {
 
   const config = decodeProto(configBytes);
 
-  const usedRaw = first(config, F_USAGE_PERCENT);
-  const used = Number.isFinite(usedRaw) ? Math.max(0, Math.min(100, usedRaw)) : 0;
-
   let resetAt = null;
   const periodEnd = first(config, F_PERIOD_END);
   if (periodEnd) {
@@ -1104,6 +1114,9 @@ function readPaidUsage(response) {
     }
   }
 
+  // Field presence, before the percent > 0 filter below: a product entry that
+  // decodes is proof the schema still holds even when every percent is 0.
+  const hasProductField = (config[F_PRODUCT_USAGE] || []).length > 0;
   const products = (config[F_PRODUCT_USAGE] || [])
     .map(entry => {
       const parsed = decodeProto(entry);
@@ -1117,6 +1130,16 @@ function readPaidUsage(response) {
     })
     .filter(product => product.percent > 0)
     .sort((a, b) => b.percent - a.percent);
+
+  // proto3 omits zero-valued scalars, so a missing usage field can be a real
+  // 0% — but only while the rest of the config still decodes. When nothing
+  // recognizable is left the schema has drifted: report failure so the panel
+  // keeps the last good numbers instead of showing a fabricated healthy 0%.
+  const usedRaw = first(config, F_USAGE_PERCENT);
+  if (!Number.isFinite(usedRaw) && resetAt === null && !hasProductField) {
+    return null;
+  }
+  const used = Number.isFinite(usedRaw) ? Math.max(0, Math.min(100, usedRaw)) : 0;
 
   return { used, resetAt, products };
 }
@@ -1143,11 +1166,16 @@ async function checkPaidUsage() {
   updateDisplay({ buckets: [], unauthorized: false, paid });
 }
 
+// Resolves to: an entry (paid), false (signed in, free), 'unauthorized'
+// (signed out), or null (the lookup itself failed — tier unknown).
 async function fetchActiveSubscription() {
   try {
     const response = await fetch("https://grok.com/rest/subscriptions", {
       credentials: "include"
     });
+    if (response.status === 401) {
+      return 'unauthorized';
+    }
     if (!response.ok) {
       return null;
     }
@@ -1161,6 +1189,24 @@ async function fetchActiveSubscription() {
 
 async function refresh() {
   const active = await fetchActiveSubscription();
+
+  if (active === 'unauthorized') {
+    updateDisplay({ buckets: [], unauthorized: true, paid: null });
+    return;
+  }
+
+  // Tier unknown (network, 5xx). A paid panel must not be repainted with the
+  // frozen free-tier floor numbers, so keep it. Anything else falls back to
+  // the free path exactly as 1.5.0 did — it shows live free data when only
+  // the subscriptions endpoint is down, turns a 401 into the sign-in prompt,
+  // and keeps or shows Loading via its own guards when nothing is reachable.
+  if (active === null) {
+    if (lastData.paid) {
+      return;
+    }
+    await checkRateLimits();
+    return;
+  }
 
   if (active) {
     await checkPaidUsage();

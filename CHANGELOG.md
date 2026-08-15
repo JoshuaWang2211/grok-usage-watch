@@ -2,6 +2,16 @@
 
 ---
 
+## v1.5.1 - 2026-08-14
+
+* Fixed paid accounts briefly seeing the free-tier panel with frozen numbers whenever the subscription check hit a temporary network error. A failed check now keeps the last good paid view; free accounts still fall back to live free data exactly as before.
+* Signing out is now detected from the subscription check itself, so the "Sign in to grok.com" prompt appears immediately — including for paid accounts, whose expired session previously left the old numbers frozen on screen.
+* Fixed a short offline stretch wiping a paid panel — or the sign-in prompt — down to "Loading...". A refresh that got no answer at all now keeps what is on screen; an answered-but-empty result still updates honestly.
+* Hardened the paid-usage parser against future API shape changes: a response whose known fields no longer decode is treated as a failure — keeping the last good numbers — instead of being displayed as a healthy 0% used. A genuine 0%, such as a fresh account or a just-reset week, still shows correctly.
+* Removed the unused `host_permissions` entry from the manifest. The extension only talks to grok.com from inside the grok.com page itself, which needs no extra permission; the install prompt is unchanged.
+
+---
+
 ## v1.5.0 - 2026-08-03
 
 * Fixed the panel showing no usage: xAI replaced the quota API, so the fields the extension read were gone and it reported 0 even when the request succeeded.
