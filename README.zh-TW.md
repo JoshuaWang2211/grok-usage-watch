@@ -23,7 +23,8 @@
 * 可拖曳的懸浮式介面
 * 拖曳右下角握把即可縮放面板
 * 不需要時可收合成精簡指示器
-* 支援深色／淺色模式切換
+* 八套主題：Light、Dark、Cozy、Pixel、Sage、Lavender、Ocean、Graphite
+* 從 Settings → Theme 自由搭配 Solid、Gradient 或 Texture 背景
 
 ---
 

@@ -2,6 +2,16 @@
 
 ---
 
+## v1.6.0 - 2026-10-23
+
+* Added eight visual themes: Light, Dark, Cozy, Pixel, Sage, Lavender, Ocean and Graphite.
+* Added Solid, Gradient and Texture backgrounds that can be combined with any theme. Previews apply immediately and selections are saved locally.
+* Moved appearance choices into a dedicated Theme page, accessible from Settings, with a Back button that returns to Settings.
+* Kept theme choices, keyboard focus and scroll position stable while usage refreshes in the background.
+* Let About fit its content naturally, including the Pixel font, without an internal scroll area.
+
+---
+
 ## v1.5.1 - 2026-08-14
 
 * Fixed paid accounts briefly seeing the free-tier panel with frozen numbers whenever the subscription check hit a temporary network error. A failed check now keeps the last good paid view; free accounts still fall back to live free data exactly as before.

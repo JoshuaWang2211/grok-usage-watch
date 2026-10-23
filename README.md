@@ -23,7 +23,8 @@ It features a clean, draggable floating window that keeps your usage always visi
 * Draggable, floating overlay UI
 * Drag the corner grip to resize the panel
 * Collapse to a compact indicator when you want it out of the way
-* Light/Dark mode toggle
+* Eight themes: Light, Dark, Cozy, Pixel, Sage, Lavender, Ocean and Graphite
+* Mix any theme with Solid, Gradient or Texture backgrounds from Settings → Theme
 
 ---
 
